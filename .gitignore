@@ -1,3 +1,8 @@
+src/repliseq
+.htslib
+.boost
+
+
 # Compiled Object files
 *.slo
 *.lo

@@ -23,7 +23,7 @@
 #include "gperftools/profiler.h"
 #endif
 
-#include "util.h"
+#include "repliseq.h"
 
 using namespace repliseq;
 
@@ -129,5 +129,5 @@ int main(int argc, char **argv) {
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
 
-  return 0;
+  return repliseqRun(c);
 }

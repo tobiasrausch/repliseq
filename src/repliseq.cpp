@@ -28,6 +28,9 @@
 using namespace repliseq;
 
 struct Config {
+  uint16_t minq;
+  int32_t wsize;
+  int32_t step;
   std::string outprefix;
   boost::filesystem::path genome;
   std::vector<boost::filesystem::path> files;
@@ -46,8 +49,11 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
+    ("qual,q", boost::program_options::value<uint16_t>(&c.minq)->default_value(1), "min. mapping quality")
+    ("window,w", boost::program_options::value<int32_t>(&c.wsize)->default_value(50000), "sliding window size")
+    ("step,s", boost::program_options::value<int32_t>(&c.step)->default_value(1000), "window offset (step size)")
     ("reference,r", boost::program_options::value<boost::filesystem::path>(&c.genome), "reference fasta file (required)")
-    ("outprefix,o", boost::program_options::value<std::string>(&c.outprefix)->default_value("stats"), "output file prefix")
+    ("outprefix,o", boost::program_options::value<std::string>(&c.outprefix)->default_value("pref"), "output file prefix")
     ;
 
   boost::program_options::options_description hidden("Hidden options");

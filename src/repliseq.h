@@ -1,6 +1,7 @@
 #ifndef REPLISEQ_H
 #define REPLISEQ_H
 
+#include <limits>
 
 #include <boost/dynamic_bitset.hpp>
 #include <boost/unordered_map.hpp>
@@ -30,6 +31,14 @@ namespace repliseq
     }
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
+    // Genomic counts
+    typedef std::vector<int32_t> TBinCount;
+    typedef std::vector<TBinCount> TGenomicCount;
+    typedef std::vector<TGenomicCount> TFileCounts;
+    TFileCounts fc(c.files.size(), TGenomicCount());
+    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) fc[file_c].resize(hdr->n_targets, TBinCount());
+    std::vector<int32_t> totalByFile(c.files.size(), 0);
+    
     // Parse reference and BAM file
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "BAM file parsing" << std::endl;
@@ -38,17 +47,100 @@ namespace repliseq
     // Parse genome
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       ++show_progress;
+      if (refIndex != 11) continue;
+      
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	// Set up fragment counter
+	typedef uint8_t TCountType;
+	int32_t maxCount = std::numeric_limits<TCountType>::max();
+	typedef std::vector<TCountType> TChrCounts;
+	TChrCounts cc(hdr->target_len[refIndex], 0);
+
+	// Iterate bam
 	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr->target_len[refIndex]);
 	bam1_t* rec = bam_init1();
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	  if (rec->core.qual < c.minq) continue;
+
+	  int32_t midPoint = 0;
+	  if (rec->core.flag & BAM_FPAIRED) {
+	    if ((rec->core.flag & BAM_FMUNMAP) || (rec->core.pos < rec->core.mpos) || (rec->core.tid != rec->core.mtid)) continue;
+	    int32_t outerISize = rec->core.pos - rec->core.mpos + rec->core.l_qseq;
+	    if (outerISize < 1000) midPoint = rec->core.pos + outerISize / 2;
+	    else midPoint = rec->core.pos + halfAlignmentLength(rec);
+	  } else {
+	    midPoint = rec->core.pos + halfAlignmentLength(rec);
+	  }
+	  if ((midPoint >= 0) && (midPoint < (int32_t) hdr->target_len[refIndex])) {
+	    ++totalByFile[file_c];
+	    if (cc[midPoint] < maxCount) ++cc[midPoint];
+	  }
 	}
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
+
+	// Summarize counts
+	for(int32_t i = 0; (i + c.wsize) < (int32_t) hdr->target_len[refIndex]; i = i + c.step) {
+	  int32_t sumf = 0;
+	  for(int32_t k = i; k < i + c.wsize; ++k) sumf += cc[k];
+	  fc[file_c][refIndex].push_back(sumf);
+	}
       }
     }
 
+    // Median normalize counts
+    std::sort(totalByFile.begin(), totalByFile.end());
+    int32_t med = totalByFile[totalByFile.size() / 2];
+    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+      double corf = (double) med / (double) totalByFile[file_c];
+      for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+	for(uint32_t k = 0; k < fc[file_c][refIndex].size(); ++k) {
+	  fc[file_c][refIndex][k] = (int32_t) (fc[file_c][refIndex][k] * corf);
+	}
+      }
+    }
+
+    // Percent normalized values
+    typedef std::vector<int32_t> TWindows;
+    typedef std::vector<TWindows> TGenomicWindows;
+    TGenomicWindows gw(hdr->n_targets, TWindows());
+    TWindows all;
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) gw[refIndex].resize(fc[0][refIndex].size(), 0);
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      for(uint32_t k = 0; k < fc[0][refIndex].size(); ++k) {
+	for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) gw[refIndex][k] += fc[file_c][refIndex][k];
+	all.push_back(gw[refIndex][k]);
+      }
+    }
+    std::sort(all.begin(), all.end());
+    int32_t medrep= all[all.size() / 2];
+    all.clear();
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      for(uint32_t k = 0; k < fc[0][refIndex].size(); ++k) {
+	double corf = 1.0;
+	if (gw[refIndex][k] != 0) corf = (double) medrep / (double) gw[refIndex][k];
+	for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) fc[file_c][refIndex][k] = (int32_t) (fc[file_c][refIndex][k] * corf);
+      }
+    }
+
+    // Output profile
+    std::string statFileName = c.outprefix + ".profile.tsv";
+    std::ofstream pfile(statFileName.c_str());
+    pfile << "chr\tpos";
+    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) pfile << "\t" << c.files[file_c].stem().string();
+    pfile << std::endl;
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      if (!fc[0][refIndex].empty()) {
+	for(uint32_t k = 0; k < fc[0][refIndex].size(); ++k) {
+	  pfile << hdr->target_name[refIndex] << '\t' << k * c.step + c.wsize / 2;
+	  for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) pfile << '\t' << fc[file_c][refIndex][k];
+	  pfile << std::endl;
+	}
+      }
+    }
+    pfile.close();
+    
     // clean-up
     bam_hdr_destroy(hdr);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {

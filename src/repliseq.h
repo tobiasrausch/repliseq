@@ -47,7 +47,6 @@ namespace repliseq
     // Parse genome
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       ++show_progress;
-      if (refIndex != 11) continue;
       
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	// Set up fragment counter

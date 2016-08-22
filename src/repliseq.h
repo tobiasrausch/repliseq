@@ -102,7 +102,7 @@ namespace repliseq
     }
 
     // Percent normalized values
-    typedef std::vector<int32_t> TWindows;
+    typedef std::vector<double> TWindows;
     typedef std::vector<TWindows> TGenomicWindows;
     TGenomicWindows gw(hdr->n_targets, TWindows());
     TWindows all;
@@ -124,6 +124,47 @@ namespace repliseq
       }
     }
 
+    // Replication track
+    std::vector<double> magicformula;
+    magicformula.push_back(0.917);
+    magicformula.push_back(0.75);
+    magicformula.push_back(0.583);
+    magicformula.push_back(0.417);
+    magicformula.push_back(0.25);
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      for(uint32_t k = 0; k < gw[refIndex].size(); ++k) {
+	gw[refIndex][k] = 0;
+	for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+	  if (file_c < magicformula.size()) {
+	    gw[refIndex][k] += magicformula[file_c] * fc[file_c][refIndex][k];
+	  }
+	}
+      }
+    }
+
+    // Moving avg. smoothing
+    int32_t smoothw = 75;
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      double mavg = 0;
+      for(int32_t k = 0; (k < smoothw) && (k < (int32_t) gw[refIndex].size()); ++k) mavg += gw[refIndex][k];
+      for(int32_t k = smoothw; k < (int32_t) gw[refIndex].size(); ++k) {
+	double oldval = mavg;
+	mavg -= gw[refIndex][k-smoothw];
+	if (gw[refIndex][k-smoothw] != 0) {
+	  gw[refIndex][k-smoothw] = oldval / (double) smoothw;
+	}
+	mavg += gw[refIndex][k];
+      }
+      for(int32_t k = (int32_t) gw[refIndex].size() - 1; (k > (int32_t) gw[refIndex].size() - smoothw) && (k >= 0); --k) {
+	double oldval = mavg;
+	mavg -= gw[refIndex][k];
+	if (gw[refIndex][k] != 0) {
+	  gw[refIndex][k] = oldval / (double) smoothw;
+	}
+	mavg += gw[refIndex][k-smoothw];
+      }
+    }
+
     // Output profile
     std::string statFileName = c.outprefix + ".profile.tsv";
     std::ofstream pfile(statFileName.c_str());
@@ -140,6 +181,17 @@ namespace repliseq
       }
     }
     pfile.close();
+
+    // Output replication timing (higher values correspond to earlier replication)
+    statFileName = c.outprefix + ".reptime.tsv";
+    std::ofstream rfile(statFileName.c_str());
+    rfile << "chr\tpos\treptime" << std::endl;
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      for(uint32_t k = 0; k < gw[refIndex].size(); ++k) {
+	rfile << hdr->target_name[refIndex] << '\t' << k * c.step + c.wsize / 2 << '\t' << gw[refIndex][k] << std::endl;
+      }
+    }
+    rfile.close();
     
     // clean-up
     bam_hdr_destroy(hdr);

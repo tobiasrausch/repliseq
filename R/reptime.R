@@ -30,16 +30,17 @@ if (!is.null(opt$region)) {
    }
 }
 
+x$grp = cumsum(x$reptime == 0)
+x = x[x$reptime > 0,]
+x$grp = factor(x$grp)
 x = x[x$chr == chr & x$pos>=minStart & x$pos<=maxStart,]
-x=melt(x, id.vars=c("chr","pos"))
 
 
-p1 = ggplot(data=x, aes(x=pos, y=value))
-p1 = p1 + geom_line(aes(group=variable, color=variable)) + facet_wrap(~variable, ncol=1)
-p1 = p1 + xlab(paste0(chr, " position")) + ylab("Normalized Tag Density")
+p1 = ggplot(data=x, aes(x=pos, y=reptime))
+p1 = p1 + geom_line(aes(group=grp))
+p1 = p1 + xlab(paste0(chr, " position")) + ylab("Replication Time")
 p1 = p1 + scale_x_continuous(labels=comma)
 p1 = p1 + scale_y_continuous(labels=comma)
-p1 = p1 + labs(color="Cell-cycle fraction")
-ggsave(paste0(chr, ".", minStart, ".", maxStart ,".reppattern.png"), width=8, height=8)
+ggsave(paste0(chr, ".", minStart, ".", maxStart ,".reptime.png"), width=16, height=8)
 print(warnings())
 

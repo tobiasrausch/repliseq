@@ -30,7 +30,7 @@ using namespace repliseq;
 struct Config {
   std::string outprefix;
   boost::filesystem::path genome;
-  std::vector<boost::filesystem::path> bamFile;
+  std::vector<boost::filesystem::path> files;
 };
 
 

@@ -135,12 +135,12 @@ namespace repliseq
       }
     }
     std::sort(all.begin(), all.end());
-    int32_t medrep= all[all.size() / 2];
+    double medrep = all[all.size() / 2];
     all.clear();
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       for(uint32_t k = 0; k < fc[0][refIndex].size(); ++k) {
 	double corf = 1.0;
-	if (gw[refIndex][k] != 0) corf = (double) medrep / (double) gw[refIndex][k];
+	if (gw[refIndex][k] != 0) corf = medrep / (double) gw[refIndex][k];
 	for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) fc[file_c][refIndex][k] = (int32_t) (fc[file_c][refIndex][k] * corf);
       }
     }

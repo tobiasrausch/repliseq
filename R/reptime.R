@@ -11,14 +11,13 @@ optl = list(
 opt_parser = OptionParser(option_list=optl)
 opt = parse_args(opt_parser)
 
-if (is.null(opt$file)) {
+if ((is.null(opt$file)) || (is.null(opt$region))) {
    print_help(opt_parser)
    stop("Input options missing!", call.=FALSE)
 }
 
 x = read.table(opt$file, header=T)
 
-chr = NULL
 if (!is.null(opt$region)) {
    s=unlist(strsplit(opt$region, ":"))
    chr=s[1]
@@ -34,16 +33,15 @@ if (!is.null(opt$region)) {
 x$grp = cumsum(x$reptime == -1)
 x = x[x$reptime >= 0,]
 x$grp = factor(x$grp)
-if (!is.null(chr)) { x = x[x$chr == chr & x$pos>=minStart & x$pos<=maxStart,]; }
+x = x[x$chr == chr & x$pos>=minStart & x$pos<=maxStart,];
 x$chr = factor(x$chr)
 
 
 p1 = ggplot(data=x, aes(x=pos, y=reptime))
 p1 = p1 + geom_line(aes(group=grp))
-p1 = p1 + xlab(paste0("Position")) + ylab("Replication Time")
+p1 = p1 + xlab(paste0(chr, " position")) + ylab("Replication Time")
 p1 = p1 + scale_x_continuous(labels=comma)
 p1 = p1 + scale_y_continuous(labels=comma)
-p1 = p1 + facet_wrap( ~ chr)
-ggsave("reptime.png", width=32, height=8)
+ggsave(paste0(chr, ".", minStart, ".", maxStart ,".reptime.png"), width=16, height=4)
 print(warnings())
 

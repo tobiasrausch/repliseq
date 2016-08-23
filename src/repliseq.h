@@ -45,8 +45,22 @@ namespace repliseq
     boost::progress_display show_progress( hdr->n_targets );
 
     // Parse genome
+    faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       ++show_progress;
+
+      // Fetch sequence
+      char* seq = NULL;
+      int32_t seqlen = -1;
+      std::string tname(hdr->target_name[refIndex]);
+      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+
+      // Fetch Ns
+      typedef boost::dynamic_bitset<> TBitSet;
+      TBitSet nrun(hdr->target_len[refIndex]);
+      for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i)
+	if ((seq[i] == 'n') || (seq[i] == 'N')) nrun[i] = 1;
+      
       
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	// Set up fragment counter
@@ -82,11 +96,19 @@ namespace repliseq
 	// Summarize counts
 	for(int32_t i = 0; (i + c.wsize) < (int32_t) hdr->target_len[refIndex]; i = i + c.step) {
 	  int32_t sumf = 0;
-	  for(int32_t k = i; k < i + c.wsize; ++k) sumf += cc[k];
-	  fc[file_c][refIndex].push_back(sumf);
+	  int32_t nsum = 0;
+	  for(int32_t k = i; k < i + c.wsize; ++k) {
+	    sumf += cc[k];
+	    nsum += nrun[k];
+	  }
+	  // Blacklist windows with Ns
+	  if (!nsum) fc[file_c][refIndex].push_back(sumf);
+	  else fc[file_c][refIndex].push_back(0);
 	}
       }
+      if (seq != NULL) free(seq);
     }
+    fai_destroy(fai);
 
     // Median normalize counts
     std::sort(totalByFile.begin(), totalByFile.end());
@@ -144,23 +166,32 @@ namespace repliseq
     // Moving avg. smoothing
     int32_t smoothw = 75;
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
-      double mavg = 0;
-      for(int32_t k = 0; (k < smoothw) && (k < (int32_t) gw[refIndex].size()); ++k) mavg += gw[refIndex][k];
-      for(int32_t k = smoothw; k < (int32_t) gw[refIndex].size(); ++k) {
-	double oldval = mavg;
-	mavg -= gw[refIndex][k-smoothw];
-	if (gw[refIndex][k-smoothw] != 0) {
-	  gw[refIndex][k-smoothw] = oldval / (double) smoothw;
+      typename TGenomicWindows::value_type tmpgw(gw[refIndex].size(), 0);
+      for(int32_t k = 0; k < (int32_t) gw[refIndex].size(); ++k) {
+	double mavg = 0;
+	int32_t cavg = 0;
+	int32_t ks = std::max(0, k-smoothw);
+	int32_t ke = std::min((int32_t) gw[refIndex].size(), k+smoothw);
+	for(int32_t ki = ks; ki<ke; ++ki) {
+	  if (gw[refIndex][ki] != 0) {
+	    mavg += gw[refIndex][ki];
+	    ++cavg;
+	  }
 	}
-	mavg += gw[refIndex][k];
+	tmpgw[k] = mavg / (double) cavg;
       }
-      for(int32_t k = (int32_t) gw[refIndex].size() - 1; (k > (int32_t) gw[refIndex].size() - smoothw) && (k >= 0); --k) {
-	double oldval = mavg;
-	mavg -= gw[refIndex][k];
+      double maxVal = 0;
+      double minVal = 40000000;
+      for(int32_t k = 0; k < (int32_t) gw[refIndex].size(); ++k) {
 	if (gw[refIndex][k] != 0) {
-	  gw[refIndex][k] = oldval / (double) smoothw;
-	}
-	mavg += gw[refIndex][k-smoothw];
+	  gw[refIndex][k] = tmpgw[k];
+	  if (gw[refIndex][k] < minVal) minVal = gw[refIndex][k];
+	  if (gw[refIndex][k] > maxVal) maxVal = gw[refIndex][k];
+	} else gw[refIndex][k] = -1;
+      }
+      // Normalize to [0,1]
+      for(int32_t k = 0; k < (int32_t) gw[refIndex].size(); ++k) {
+	if (gw[refIndex][k] != -1) gw[refIndex][k] = (gw[refIndex][k] - minVal) / (maxVal - minVal);
       }
     }
 

@@ -40,6 +40,6 @@ p1 = p1 + xlab(paste0(chr, " position")) + ylab("Normalized Tag Density")
 p1 = p1 + scale_x_continuous(labels=comma)
 p1 = p1 + scale_y_continuous(labels=comma)
 p1 = p1 + labs(color="Cell-cycle fraction")
-ggsave(paste0(chr, ".", minStart, ".", maxStart ,".reppattern.png"), width=8, height=8)
+ggsave(paste0(chr, ".", minStart, ".", maxStart ,".reppattern.png"), width=8, height=12)
 print(warnings())
 

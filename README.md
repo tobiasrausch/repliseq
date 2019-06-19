@@ -1,3 +1,7 @@
+
+Deprecated: Please use `alfred replication` which is available [here](https://github.com/tobiasrausch/alfred).
+
+
 repliseq installation
 ---------------------
 
